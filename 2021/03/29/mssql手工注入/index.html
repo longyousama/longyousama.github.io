@@ -1,0 +1,189 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#0078E7"><meta name="author" content="龙幽sama"><meta name="copyright" content="龙幽sama"><meta name="generator" content="Hexo 5.4.0"><meta name="theme" content="hexo-theme-yun"><title>mssql手工注入 | 龙幽sama的网络安全站点</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@900&amp;display=swap" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/star-markdown-css@0.1.24/dist/yun/yun-markdown.min.css"><script src="//at.alicdn.com/t/font_1140697_ed8vp4atwoj.js" async></script><script src="https://cdn.jsdelivr.net/npm/scrollreveal/dist/scrollreveal.min.js" defer></script><script>document.addEventListener("DOMContentLoaded", () => {
+  [".post-card",".post-content img"].forEach((target)=> {
+    ScrollReveal().reveal(target);
+  })
+});
+</script><link id="light-prism-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@latest/themes/prism.css" media="(prefers-color-scheme: light)"><link id="dark-prism-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@latest/themes/prism-tomorrow.css" media="(prefers-color-scheme: dark)"><link rel="shortcut icon" type="image/svg+xml" href="/yun.svg"><link rel="mask-icon" href="/yun.svg" color="#0078E7"><link rel="alternate icon" href="/yun.ico"><link rel="preload" href="/css/hexo-theme-yun.css" as="style"><link rel="preload" href="/js/utils.js" as="script"><link rel="preload" href="/js/hexo-theme-yun.js" as="script"><link rel="prefetch" href="/js/sidebar.js" as="script"><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><script id="yun-config">
+    const Yun = window.Yun || {};
+    window.CONFIG = {"hostname":"longyousama.github.io","root":"/","title":"龙幽的小站","version":"1.5.2","mode":"dark","copycode":true,"page":{"isPost":true},"i18n":{"placeholder":"搜索...","empty":"找不到您查询的内容: ${query}","hits":"找到 ${hits} 条结果","hits_time":"找到 ${hits} 条结果（用时 ${time} 毫秒）"},"anonymous_image":"https://cdn.jsdelivr.net/gh/YunYouJun/cdn/img/avatar/none.jpg","say":{"api":"https://v1.hitokoto.cn","hitokoto":true},"fireworks":{"colors":["102, 167, 221","62, 131, 225","33, 78, 194"]}};
+  </script><link rel="stylesheet" href="/css/hexo-theme-yun.css"><script src="/js/utils.js"></script><script src="/js/hexo-theme-yun.js"></script><meta name="description" content="0x01.前言最近在练习SQLServer的手工注入但是Microsoft SQL Sever 分为很多个版本，版本的不断升级使得安全性也越来越高，在我们渗透过程中最喜欢的版本应该是2008以前，在2008及其以后的版本数据库的权限已经不再是system，为了迎合新的版本我接下来的实验都在2008版本下面进行，同时也介绍以前可以利用的方法，相对于MySQL这个mssql显得重了许多，他众多的功能也">
+<meta property="og:type" content="article">
+<meta property="og:title" content="mssql手工注入">
+<meta property="og:url" content="http://longyousama.github.io/2021/03/29/mssql%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5/index.html">
+<meta property="og:site_name" content="龙幽sama的网络安全站点">
+<meta property="og:description" content="0x01.前言最近在练习SQLServer的手工注入但是Microsoft SQL Sever 分为很多个版本，版本的不断升级使得安全性也越来越高，在我们渗透过程中最喜欢的版本应该是2008以前，在2008及其以后的版本数据库的权限已经不再是system，为了迎合新的版本我接下来的实验都在2008版本下面进行，同时也介绍以前可以利用的方法，相对于MySQL这个mssql显得重了许多，他众多的功能也">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324143658.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324144709.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324145604.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324145238.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/229261e1641144b889fc20e4ec0122d2.jpeg">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324150416.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324151054.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324151103.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324152924.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153059.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153122.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153339.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153438.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153457.png">
+<meta property="og:image" content="c:/Users/28469/AppData/Roaming/Typora/typora-user-images/image-20210324153640881.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153655.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160922.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324161009.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324161157.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324161257.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154343.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154439.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154544.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154634.png">
+<meta property="og:image" content="c:/Users/28469/AppData/Roaming/Typora/typora-user-images/image-20210324155210466.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324155817.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324155904.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324155948.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160036.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160117.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160636.png">
+<meta property="article:published_time" content="2021-03-29T06:28:16.000Z">
+<meta property="article:modified_time" content="2021-03-29T06:28:50.415Z">
+<meta property="article:author" content="龙幽sama">
+<meta property="article:tag" content="WEB渗透">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324143658.png"><script src="/js/ui/mode.js"></script></head><body><script defer src="https://cdn.jsdelivr.net/npm/animejs@latest"></script><script defer src="/js/ui/fireworks.js"></script><canvas class="fireworks"></canvas><canvas id="trianglifyContainer"></canvas><script defer src="https://cdn.jsdelivr.net/npm/trianglify@4/dist/trianglify.bundle.js"></script><script>document.addEventListener("DOMContentLoaded", () => {
+  const pattern = trianglify({
+    width: 800,
+    height: 600,
+    cellSize: 75,
+    palette: ["YlGnBu", "GnBu", "Purples", "Blues"],
+  });
+  const canvasOpts = {
+    applyCssScaling: false
+  }
+  document.body.appendChild(pattern.toCanvas(trianglifyContainer, canvasOpts));
+});</script><div class="container"><a class="sidebar-toggle hty-icon-button" id="menu-btn"><div class="hamburger hamburger--spin" type="button"><span class="hamburger-box"><span class="hamburger-inner"></span></span></div></a><div class="sidebar-toggle sidebar-overlay"></div><aside class="sidebar"><script src="/js/sidebar.js"></script><ul class="sidebar-nav"><li class="sidebar-nav-item sidebar-nav-toc hty-icon-button sidebar-nav-active" data-target="post-toc-wrap" title="文章目录"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-list-ordered"></use></svg></li><li class="sidebar-nav-item sidebar-nav-overview hty-icon-button" data-target="site-overview-wrap" title="站点概览"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-passport-line"></use></svg></li></ul><div class="sidebar-panel" id="site-overview-wrap"><div class="site-info mickey-mouse"><a class="site-author-avatar" href="/about/" title="龙幽sama"><img width="96" loading="lazy" src="/images/a.jpg" alt="龙幽sama"></a><div class="site-author-name"><a href="/about/">龙幽sama</a></div><span class="site-name">龙幽sama的网络安全站点</span><sub class="site-subtitle"></sub><div class="site-desciption"></div></div><nav class="site-state"><a class="site-state-item hty-icon-button icon-home" href="/" title="首页"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-home-4-line"></use></svg></span></a><div class="site-state-item"><a href="/archives/" title="归档"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-archive-line"></use></svg></span><span class="site-state-item-count">5</span></a></div><div class="site-state-item"><a href="/categories/" title="分类"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-folder-2-line"></use></svg></span><span class="site-state-item-count">0</span></a></div><div class="site-state-item"><a href="/tags/" title="标签"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-price-tag-3-line"></use></svg></span><span class="site-state-item-count">2</span></a></div><a class="site-state-item hty-icon-button" target="_blank" rel="noopener" href="https://yun.yunyoujun.cn" title="文档"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-settings-line"></use></svg></span></a></nav><hr style="margin-bottom:0.5rem"></div><div class="sidebar-panel sidebar-panel-active" id="post-toc-wrap"><div class="post-toc"><div class="post-toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#0x01-%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">0x01.前言</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#0x02-%E9%BB%98%E8%AE%A4%E6%95%B0%E6%8D%AE%E5%BA%93%E4%BB%8B%E7%BB%8D-amp-amp-SQL%E8%AF%AD%E6%B3%95%E4%BB%8B%E7%BB%8D"><span class="toc-number">2.</span> <span class="toc-text">0x02.默认数据库介绍&amp;&amp;SQL语法介绍</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#0x001-%E6%9F%A5%E8%AF%A2%E6%89%80%E6%9C%89%E6%95%B0%E6%8D%AE%E5%BA%93%E5%90%8D"><span class="toc-number">2.1.</span> <span class="toc-text">0x001.查询所有数据库名</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x002-%E6%9F%A5%E8%AF%A2test%E6%95%B0%E6%8D%AE%E5%BA%93%E6%89%80%E6%9C%89%E8%A1%A8%E5%90%8D"><span class="toc-number">2.2.</span> <span class="toc-text">0x002.查询test数据库所有表名</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x003-%E6%9F%A5%E8%AF%A2test%E5%BA%93%E6%95%B0%E6%8D%AE"><span class="toc-number">2.3.</span> <span class="toc-text">0x003.查询test库数据</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#0x03-SQLServer%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5"><span class="toc-number">3.</span> <span class="toc-text">0x03.SQLServer手工注入</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#0x001-%E8%8E%B7%E5%8F%96%E5%9F%BA%E6%9C%AC%E4%BF%A1%E6%81%AF"><span class="toc-number">3.1.</span> <span class="toc-text">0x001.获取基本信息</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x002-%E5%88%A4%E6%96%AD%E6%B3%A8%E5%85%A5%E7%82%B9%E6%9D%83%E9%99%90"><span class="toc-number">3.2.</span> <span class="toc-text">0x002.判断注入点权限</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x003-%E8%8E%B7%E5%8F%96%E6%89%80%E6%9C%89%E6%95%B0%E6%8D%AE%E5%BA%93%E5%90%8D"><span class="toc-number">3.3.</span> <span class="toc-text">0x003.获取所有数据库名</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x004-%E8%8E%B7%E5%8F%96test%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9A%84%E6%89%80%E6%9C%89%E8%A1%A8%E5%90%8D"><span class="toc-number">3.4.</span> <span class="toc-text">0x004.获取test数据库的所有表名</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x005-%E8%8E%B7%E5%8F%96test%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9A%84users%E8%A1%A8%E7%9A%84%E6%89%80%E6%9C%89%E5%AD%97%E6%AE%B5%E5%90%8D"><span class="toc-number">3.5.</span> <span class="toc-text">0x005.获取test数据库的users表的所有字段名</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x006-%E8%8E%B7%E5%8F%96test%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9A%84%E6%95%B0%E6%8D%AE"><span class="toc-number">3.6.</span> <span class="toc-text">0x006.获取test数据库的数据</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x05-XP-CMDSHELL%E6%89%A7%E8%A1%8C%E5%91%BD%E4%BB%A4"><span class="toc-number">3.7.</span> <span class="toc-text">0x05.XP_CMDSHELL执行命令</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#0x04-%E5%B7%AE%E5%BC%82%E5%A4%87%E4%BB%BDGetshell"><span class="toc-number">4.</span> <span class="toc-text">0x04.差异备份Getshell</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#0x05-log%E5%A4%87%E4%BB%BDGetshell"><span class="toc-number">4.1.</span> <span class="toc-text">0x05.log备份Getshell</span></a></li></ol></li></ol></div></div></div></aside><main class="sidebar-translate" id="content"><div id="post"><article class="hty-card post-block" itemscope itemtype="https://schema.org/Article"><link itemprop="mainEntityOfPage" href="http://longyousama.github.io/2021/03/29/mssql%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5/"><span hidden itemprop="author" itemscope itemtype="https://schema.org/Person"><meta itemprop="name" content="龙幽sama"><meta itemprop="description"></span><span hidden itemprop="publisher" itemscope itemtype="https://schema.org/Organization"><meta itemprop="name" content="龙幽sama的网络安全站点"></span><header class="post-header"><h1 class="post-title" itemprop="name headline">mssql手工注入</h1><div class="post-meta"><div class="post-time" style="display:inline-block"><span class="post-meta-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-calendar-line"></use></svg></span> <time title="创建时间：2021-03-29 14:28:16" itemprop="dateCreated datePublished" datetime="2021-03-29T14:28:16+08:00">2021-03-29</time></div><div class="post-classify"><span class="post-tag"><a class="tag" href="/tags/WEB%E6%B8%97%E9%80%8F/" style="--text-color:var(--hty-text-color)"><span class="post-meta-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-price-tag-3-line"></use></svg></span><span class="tag-name">WEB渗透</span></a></span></div></div></header><section class="post-body" itemprop="articleBody"><div class="post-content markdown-body" style="--smc-primary:#0078E7;"><h2 id="0x01-前言"><a href="#0x01-前言" class="headerlink" title="0x01.前言"></a>0x01.前言</h2><p>最近在练习SQLServer的手工注入但是Microsoft SQL Sever 分为很多个版本，版本的不断升级使得安全性也越来越高，在我们渗透过程中最喜欢的版本应该是2008以前，在2008及其以后的版本数据库的权限已经不再是system，为了迎合新的版本我接下来的实验都在2008版本下面进行，同时也介绍以前可以利用的方法，相对于MySQL这个mssql显得重了许多，他众多的功能也给我们注入过程带来了便利，所以一般数据库为mssql支持多语句我们就考虑是不是应该直接拿下webshell。</p>
+<h2 id="0x02-默认数据库介绍-amp-amp-SQL语法介绍"><a href="#0x02-默认数据库介绍-amp-amp-SQL语法介绍" class="headerlink" title="0x02.默认数据库介绍&amp;&amp;SQL语法介绍"></a>0x02.默认数据库介绍&amp;&amp;SQL语法介绍</h2><ol>
+<li>master //用于记录所有SQL Server系统级别的信息，这些信息用于控制用户数据库和数据操作。</li>
+<li>model //SQL Server为用户数据库提供的样板，新的用户数据库都以model数据库为基础。</li>
+<li>msdb //由 Enterprise Manager和Agent使用，记录着任务计划信息、事件处理信息、数据备份及恢复信息、警告及异常信息。</li>
+<li>tempdb //它为临时表和其他临时工作提供了一个存储区。</li>
+</ol>
+<h3 id="0x001-查询所有数据库名"><a href="#0x001-查询所有数据库名" class="headerlink" title="0x001.查询所有数据库名"></a>0x001.查询所有数据库名</h3><p>这里我们的SQL注入语句围绕着master库操作，master库存储了所有的数据库名等等。</p>
+<p>下面我们通过Navicat Premium 15远程连接SQLServer数据库了解SQL注入的过程，我们查询master.dbo.sysdatabases存储的所有数据库名，其他的数据库存储表名和字段名。</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324143658.png" loading="lazy"></p>
+<h3 id="0x002-查询test数据库所有表名"><a href="#0x002-查询test数据库所有表名" class="headerlink" title="0x002.查询test数据库所有表名"></a>0x002.查询test数据库所有表名</h3><p>我们使用下面语句查询test.dbo.sysobjects存储的所有表名**(注：test为当前数据库)**：</p>
+<p>select  name,xtype,id from test.dbo.sysobjects where xtype=’U’</p>
+<pre class="line-numbers language-none"><code class="language-none">xtype可以是下列对象类型中的一种： C &#x3D; CHECK 约束　　D &#x3D; 默认值或 DEFAULT 约束　　F &#x3D; FOREIGN KEY 约束　　L &#x3D; 日志　　FN &#x3D; 标量函数 IF &#x3D; 内嵌表函数 　　P &#x3D; 存储过程 　　PK &#x3D; PRIMARY KEY 约束（类型是 K） 　　RF &#x3D; 复制筛选存储过程 S &#x3D; 系统表 　　TF &#x3D; 表函数 　　TR &#x3D; 触发器 　　U &#x3D; 用户表 　　UQ &#x3D; UNIQUE 约束（类型是 K） V &#x3D; 视图 　　X &#x3D; 扩展存储过程<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324144709.png" loading="lazy"></p>
+<p>我们使用下面语句查询test数据库的users表中的内容：</p>
+<p>select * from test.dbo.users</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324145604.png" loading="lazy"></p>
+<h3 id="0x003-查询test库数据"><a href="#0x003-查询test库数据" class="headerlink" title="0x003.查询test库数据"></a>0x003.查询test库数据</h3><p>我们使用下面语句查询test数据库中的内容：</p>
+<pre class="line-numbers language-none"><code class="language-none">select cast(id as varchar(20))+&#39;_&#39;+cast(username as varchar(20))+&#39;_&#39;+cast(password as varchar(20)) from test.dbo.users	&#x2F;&#x2F;大概的意思是：将id、username和password字段转成字符类型用&quot;_&quot;连接,这样就能达到mysql中concat_ws()函数的作用将3个字段整合到1个字段中<span aria-hidden="true" class="line-numbers-rows"><span></span></span></code></pre>
+
+<pre class="line-numbers language-none"><code class="language-none">语法：   
+CAST (expression AS data_type)  
+参数说明：  
+expression：任何有效的SQServer表达式。   
+AS：用于分隔两个参数，在AS之前的是要处理的数据，在AS之后是要转换的数据类型。  
+data_type：目标系统所提供的数据类型，包括bigint和sql_variant，不能使用用户定义的数据类型。<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324145238.png" loading="lazy"></p>
+<h2 id="0x03-SQLServer手工注入"><a href="#0x03-SQLServer手工注入" class="headerlink" title="0x03.SQLServer手工注入"></a>0x03.SQLServer手工注入</h2><p>环境搭建教程：<a href="https://longyousama.github.io/2021/03/23/SQL%E6%B3%A8%E5%85%A5%E9%9D%B6%E5%9C%BA%E6%90%AD%E5%BB%BA/">https://longyousama.github.io/2021/03/23/SQL%E6%B3%A8%E5%85%A5%E9%9D%B6%E5%9C%BA%E6%90%AD%E5%BB%BA/</a></p>
+<h3 id="0x001-获取基本信息"><a href="#0x001-获取基本信息" class="headerlink" title="0x001.获取基本信息"></a>0x001.获取基本信息</h3><ol>
+<li>@@version // 数据库版本</li>
+<li>user //获取当前数据库用户名</li>
+<li>db_name // 当前数据库名 其中db_name(N)可以来遍历其他数据库</li>
+<li>;select user //查询是否支持多语句</li>
+</ol>
+<h3 id="0x002-判断注入点权限"><a href="#0x002-判断注入点权限" class="headerlink" title="0x002.判断注入点权限"></a>0x002.判断注入点权限</h3><p>我们可以使用 IS_SRVROLEMEMBER()函数来判断当前权限，如果返回1有权限，返回0则没有权限。</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/229261e1641144b889fc20e4ec0122d2.jpeg" loading="lazy"></p>
+<p>我们使用IS_SRVROLEMEMBER(‘sysadmin’)来判断当前用户是不是sa用户，返回正常说明当前用户是sa用户 </p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324150416.png" loading="lazy"></p>
+<h3 id="0x003-获取所有数据库名"><a href="#0x003-获取所有数据库名" class="headerlink" title="0x003.获取所有数据库名"></a>0x003.获取所有数据库名</h3><p>我们可以使用遍历db_name(N)函数的N参数获取所有库名</p>
+<p><strong>当前数据库</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324151054.png" loading="lazy"></p>
+<p><strong>第一个数据库</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324151103.png" loading="lazy"></p>
+<h3 id="0x004-获取test数据库的所有表名"><a href="#0x004-获取test数据库的所有表名" class="headerlink" title="0x004.获取test数据库的所有表名"></a>0x004.获取test数据库的所有表名</h3><p>我们可以使用下面语句读取test数据库的所有表名：</p>
+<p>select top 1 table_name from test.information_schema.tables    //使用top 1 进行排序，使用not in 语句筛选条件</p>
+<p><strong>第一个表</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324152924.png" loading="lazy"></p>
+<p><strong>第二个表</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153059.png" loading="lazy"></p>
+<p><strong>第三个表</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153122.png" loading="lazy"></p>
+<h3 id="0x005-获取test数据库的users表的所有字段名"><a href="#0x005-获取test数据库的users表的所有字段名" class="headerlink" title="0x005.获取test数据库的users表的所有字段名"></a>0x005.获取test数据库的users表的所有字段名</h3><p>我们可以使用下面语句读取test数据库的users表的所有字段名：</p>
+<p>select top 1 column_name from test.information_schema.columns where table_name=’users’</p>
+<p><strong>test数据库的user表的第一个字段</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153339.png" loading="lazy"></p>
+<p><strong>test数据库的user表的第二个字段</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153438.png" loading="lazy"></p>
+<p><strong>test数据库的user表的第三个字段</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153457.png" loading="lazy"></p>
+<h3 id="0x006-获取test数据库的数据"><a href="#0x006-获取test数据库的数据" class="headerlink" title="0x006.获取test数据库的数据"></a>0x006.获取test数据库的数据</h3><p><strong>test数据库的第一条数据</strong></p>
+<p><img src="C:\Users\28469\AppData\Roaming\Typora\typora-user-images\image-20210324153640881.png" alt="image-20210324153640881" loading="lazy"></p>
+<p><strong>test数据库的第二条数据</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324153655.png" loading="lazy"></p>
+<h3 id="0x05-XP-CMDSHELL执行命令"><a href="#0x05-XP-CMDSHELL执行命令" class="headerlink" title="0x05.XP_CMDSHELL执行命令"></a>0x05.XP_CMDSHELL执行命令</h3><p>1.使用exec master..xp_cmdshell无法获得回显，需创建一个表并将结果写入进去，再去读就能获取回显</p>
+<p><strong>无回显</strong></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160922.png" loading="lazy"></p>
+<p>2.创建临时表并写入内容</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324161009.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324161157.png" loading="lazy"></p>
+<p>3.查看回显</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324161257.png" loading="lazy"></p>
+<h2 id="0x04-差异备份Getshell"><a href="#0x04-差异备份Getshell" class="headerlink" title="0x04.差异备份Getshell"></a>0x04.差异备份Getshell</h2><pre class="line-numbers language-none"><code class="language-none">前置条件：
+差异备份的条件：至少DBO权限   1、前提知道绝对路径，路径可写。 2、HTTP 500错误不是自定义 3、WEB和数据在一块。还有的就是数据库中不能存在%号之类的，不然也是不成功的。 4、数据量不能太大  <span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
+
+<p>1.对当前数据库进行备份</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154343.png" loading="lazy"></p>
+<p>2.建立表添加字段<img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154439.png" loading="lazy"></p>
+<p>3.将一句话的十六进制写入字段</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154544.png" loading="lazy"></p>
+<p>4.将写入的一句话重新备份到web目录下</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324154634.png" loading="lazy"></p>
+<p><img src="C:\Users\28469\AppData\Roaming\Typora\typora-user-images\image-20210324155210466.png" alt="image-20210324155210466" loading="lazy"></p>
+<h3 id="0x05-log备份Getshell"><a href="#0x05-log备份Getshell" class="headerlink" title="0x05.log备份Getshell"></a>0x05.log备份Getshell</h3><pre class="line-numbers language-none"><code class="language-none">log备份的前置条件：
+log备份这是一种导出日志文件到web路径来getshell的方法 本次简述一下通过sqlserver进行getshell的两种方法，payload可以直接拿来用，话不多说，直接往下看就完事了   优势： 1、重复性好，多次备份的成功率高 2、相对于差异备份而言，shell的体积较小   利用条件：至少DBO权限 1、前提得知绝对路径，并且可写 2、站库不分离 3、数据库必须被备份过一次<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span></span></code></pre>
+
+<p>1.设置test数据库为空</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324155817.png" loading="lazy"></p>
+<p>2.建立一个test数据库cmd表</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324155904.png" loading="lazy"></p>
+<p>3.向cmd表的a字段插入一句话木马</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324155948.png" loading="lazy"></p>
+<p>4.先将当前数据库备份</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160036.png" loading="lazy"></p>
+<p>5.将一句话备份到web目录下</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160117.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/QQ%E6%88%AA%E5%9B%BE20210324160636.png" loading="lazy"></p>
+</div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>龙幽sama</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="http://longyousama.github.io/2021/03/29/mssql%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5/" title="mssql手工注入">http://longyousama.github.io/2021/03/29/mssql%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>本博客所有文章除特别声明外，均默认采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" target="_blank" rel="noopener" title="CC BY-NC-SA 4.0 "><svg class="icon"><use xlink:href="#icon-creative-commons-line"></use></svg><svg class="icon"><use xlink:href="#icon-creative-commons-by-line"></use></svg><svg class="icon"><use xlink:href="#icon-creative-commons-nc-line"></use></svg><svg class="icon"><use xlink:href="#icon-creative-commons-sa-line"></use></svg></a> 许可协议。</li></ul><script>document.addEventListener('copy', function (event) {
+  const clipboardData = event.clipboardData || window.clipboardData;
+  if (!clipboardData) { return; }
+  const text = window.getSelection().toString();
+  if (text) {
+    event.preventDefault();
+    clipboardData.setData('text/plain', text + '\n\n本文作者：龙幽sama\n本文链接：http://longyousama.github.io/2021/03/29/mssql%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5/\n版权声明：本博客所有文章除特别声明外，均默认采用 CC BY-NC-SA 4.0 许可协议。');
+  }
+});</script></section></article><div class="post-nav"><div class="post-nav-item"><a class="post-nav-prev" href="/2021/04/10/%E4%B9%9D%E8%A1%8C%E4%BB%A3%E7%A0%81%E7%BB%95%E8%BF%87safedog%E4%B9%8Bapache4-0/" rel="prev" title="九行代码绕过safedog之apache4.0"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-arrow-left-s-line"></use></svg><span class="post-nav-text">九行代码绕过safedog之apache4.0</span></a></div><div class="post-nav-item"><a class="post-nav-next" href="/2021/03/26/ctf/" rel="next" title="ctf"><span class="post-nav-text">ctf</span><svg class="icon" aria-hidden="true"><use xlink:href="#icon-arrow-right-s-line"></use></svg></a></div></div></div><div class="hty-card" id="comment"><div class="comment-tooltip text-center"><span>要不要和我说些什么？</span><br></div></div></main><footer class="sidebar-translate" id="footer"><div class="copyright"><span>&copy; 2019 – 2021 </span><span class="with-love" id="animate"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-cloud-line"></use></svg></span><span class="author"> 龙幽sama</span></div><div class="live_time"><span>本博客已萌萌哒地运行</span><span id="display_live_time"></span><span class="moe-text">(●'◡'●)</span><script>function blog_live_time() {
+  setTimeout(blog_live_time, 1000);
+  const start = new Date('2021-01-01T00:00:00');
+  const now = new Date();
+  const timeDiff = (now.getTime() - start.getTime());
+  const msPerMinute = 60 * 1000;
+  const msPerHour = 60 * msPerMinute;
+  const msPerDay = 24 * msPerHour;
+  const passDay = Math.floor(timeDiff / msPerDay);
+  const passHour = Math.floor((timeDiff % msPerDay) / 60 / 60 / 1000);
+  const passMinute = Math.floor((timeDiff % msPerHour) / 60 / 1000);
+  const passSecond = Math.floor((timeDiff % msPerMinute) / 1000);
+  display_live_time.innerHTML = " " + passDay + " 天 " + passHour + " 小时 " + passMinute + " 分 " + passSecond + " 秒";
+}
+blog_live_time();
+</script></div></footer><a class="hty-icon-button" id="goUp" aria-label="back-to-top" href="#"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-arrow-up-s-line"></use></svg><svg class="progress-circle-container" viewBox="0 0 100 100"><circle class="progress-circle" id="progressCircle" cx="50" cy="50" r="48" fill="none" stroke="#0078E7" stroke-width="2" stroke-linecap="round"></circle></svg></a><script>const date = new Date();
+const today = (date.getMonth() + 1) + "-" + date.getDate()
+const mourn_days = ["4-4","9-18"]
+if (mourn_days.includes(today)) {
+  document.documentElement.style.filter = "grayscale(1)";
+}</script></div></body></html>

